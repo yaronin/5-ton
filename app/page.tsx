@@ -7,6 +7,7 @@ import {
   useRef,
   useState,
   type FormEvent,
+  type ReactNode,
 } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
@@ -22,10 +23,16 @@ import {
   Zap,
 } from "lucide-react";
 
+import { AuthPanel, type AccountUser } from "@/app/components/AuthPanel";
+import { LeaderboardStrip } from "@/app/components/LeaderboardStrip";
+import { formatTime } from "@/lib/formatTime";
+import {
+  STORAGE_BEST,
+  STORAGE_RESULTS,
+  STORAGE_WEIGHT,
+} from "@/lib/storageKeys";
+
 const TOTAL_VOLUME_KG = 5000;
-const STORAGE_WEIGHT = "fiveTon.weight";
-const STORAGE_BEST = "fiveTon.bestMs";
-const STORAGE_RESULTS = "fiveTon.results";
 const MAX_RESULTS = 40;
 
 type Phase = "weight" | "dashboard" | "complete";
@@ -49,19 +56,6 @@ interface ResultsExportPayload {
   bestMs: number | null;
   weight: number | null;
   results: SessionResult[];
-}
-
-function formatTime(ms: number): string {
-  const totalSeconds = Math.floor(ms / 1000);
-  const hours = Math.floor(totalSeconds / 3600);
-  const minutes = Math.floor((totalSeconds % 3600) / 60);
-  const seconds = totalSeconds % 60;
-  const centi = Math.floor((ms % 1000) / 10);
-  const pad = (n: number, w = 2) => n.toString().padStart(w, "0");
-  if (hours > 0) {
-    return `${pad(hours)}:${pad(minutes)}:${pad(seconds)}.${pad(centi)}`;
-  }
-  return `${pad(minutes)}:${pad(seconds)}.${pad(centi)}`;
 }
 
 function normalizeSessionResults(input: unknown): SessionResult[] {
@@ -102,7 +96,45 @@ export default function Page() {
   const [activeLift, setActiveLift] = useState<Lift>("pull");
   const [showGuide, setShowGuide] = useState(false);
 
+  const accountRef = useRef<AccountUser | null>(null);
+  const [account, setAccount] = useState<AccountUser | null>(null);
+
+  const refreshSession = useCallback(() => {
+    fetch("/api/auth/me", { credentials: "include" })
+      .then((r) => r.json())
+      .then((d: { user: AccountUser | null }) => {
+        const u = d.user ?? null;
+        setAccount(u);
+        accountRef.current = u;
+      })
+      .catch(() => {
+        setAccount(null);
+        accountRef.current = null;
+      });
+  }, []);
+
+  useEffect(() => {
+    refreshSession();
+  }, [refreshSession]);
+
   const saveSessionResult = useCallback((result: SessionResult) => {
+    const u = accountRef.current;
+    if (u) {
+      void fetch("/api/results", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          completedAt: result.completedAt,
+          durationMs: result.durationMs,
+          weight: result.weight,
+          targetReps: result.targetReps,
+          pullReps: result.pullReps,
+          dipReps: result.dipReps,
+          isCompleted: result.isCompleted,
+        }),
+      }).catch(() => undefined);
+    }
     setSessionResults((prev) => {
       const next = [...prev, result].slice(-MAX_RESULTS);
       try {
@@ -433,7 +465,13 @@ export default function Page() {
       <BackdropFX />
 
       <div className="safe-y relative z-10 mx-auto flex min-h-screen w-full max-w-5xl flex-col px-4 py-5 sm:px-8 sm:py-8">
-        <Header onOpenGuide={() => setShowGuide(true)} />
+        <Header
+          onOpenGuide={() => setShowGuide(true)}
+          authSlot={
+            <AuthPanel user={account} onSessionChange={refreshSession} />
+          }
+        />
+        <LeaderboardStrip />
 
         <AnimatePresence mode="wait">
           {phase === "weight" && (
@@ -509,7 +547,13 @@ function BackdropFX() {
   );
 }
 
-function Header({ onOpenGuide }: { onOpenGuide: () => void }) {
+function Header({
+  onOpenGuide,
+  authSlot,
+}: {
+  onOpenGuide: () => void;
+  authSlot?: ReactNode;
+}) {
   return (
     <header className="mb-6 flex items-start justify-between gap-3 sm:mb-8 sm:items-center">
       <div className="flex items-center gap-3">
@@ -525,14 +569,17 @@ function Header({ onOpenGuide }: { onOpenGuide: () => void }) {
           </span>
         </div>
       </div>
-      <div className="flex items-center gap-2">
-        <button
-          onClick={onOpenGuide}
-          className="flex items-center gap-1.5 rounded-md border border-neutral-800 bg-neutral-950/70 px-2.5 py-2 font-mono text-[11px] uppercase tracking-[0.12em] text-neutral-200 transition hover:border-amber-500/40 hover:text-amber-300 sm:px-3 sm:text-xs sm:tracking-[0.18em]"
-        >
-          <Info className="h-3.5 w-3.5" />
-          How It Works
-        </button>
+      <div className="flex flex-col items-end gap-2 sm:flex-row sm:items-center">
+        <div className="flex max-w-[min(100vw-2rem,28rem)] flex-wrap items-center justify-end gap-2">
+          {authSlot}
+          <button
+            onClick={onOpenGuide}
+            className="flex items-center gap-1.5 rounded-md border border-neutral-800 bg-neutral-950/70 px-2.5 py-2 font-mono text-[11px] uppercase tracking-[0.12em] text-neutral-200 transition hover:border-amber-500/40 hover:text-amber-300 sm:px-3 sm:text-xs sm:tracking-[0.18em]"
+          >
+            <Info className="h-3.5 w-3.5" />
+            How It Works
+          </button>
+        </div>
         <div className="hidden items-center gap-2 font-mono text-xs uppercase tracking-[0.22em] text-neutral-300 sm:flex">
           <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-500 shadow-glow-emerald" />
           Rig Online

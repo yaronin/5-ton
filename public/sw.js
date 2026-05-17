@@ -1,4 +1,4 @@
-const CACHE_NAME = "five-ton-v1";
+const CACHE_NAME = "five-ton-v2";
 const APP_SHELL = ["/", "/manifest.webmanifest"];
 
 self.addEventListener("install", (event) => {
@@ -20,9 +20,16 @@ self.addEventListener("activate", (event) => {
 
 self.addEventListener("fetch", (event) => {
   const request = event.request;
-  if (request.method !== "GET") return;
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
+
+  // Never cache or intercept API — always hit the network (fixes auth / JSON POST issues).
+  if (url.pathname.startsWith("/api/")) {
+    event.respondWith(fetch(request));
+    return;
+  }
+
+  if (request.method !== "GET") return;
 
   if (request.mode === "navigate") {
     event.respondWith(
