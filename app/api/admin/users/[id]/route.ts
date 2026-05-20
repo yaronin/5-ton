@@ -5,20 +5,15 @@ import { getDb } from "@/db";
 import { users } from "@/db/schema";
 import { DEFAULT_ADMIN_EMAIL } from "@/lib/defaultAdmin";
 import { hashPassword } from "@/lib/password";
+import {
+  adminFlagToDb,
+  countAdminUsers,
+  readUserIsAdminFromDb,
+} from "@/lib/isAdminFlag";
 import { getSessionUser } from "@/lib/session";
-import { sqliteBoolean } from "@/lib/sqliteBoolean";
 import { normalizeEmail } from "@/lib/validation";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-async function countAdmins(): Promise<number> {
-  const db = getDb();
-  const [{ c }] = await db
-    .select({ c: sql<number>`count(*)` })
-    .from(users)
-    .where(eq(users.isAdmin, true));
-  return Number(c ?? 0);
-}
 
 async function resolveUserId(
   params: { id: string } | Promise<{ id: string }>
@@ -72,7 +67,7 @@ export async function PATCH(
   const updates: {
     email?: string;
     displayName?: string;
-    isAdmin?: boolean;
+    isAdmin?: 0 | 1;
     passwordHash?: string;
   } = {};
 
@@ -114,8 +109,8 @@ export async function PATCH(
 
   if (isAdminRaw !== undefined) {
     const nextAdmin = Boolean(isAdminRaw);
-    if (sqliteBoolean(target.isAdmin) && !nextAdmin) {
-      const admins = await countAdmins();
+    if ((await readUserIsAdminFromDb(id)) && !nextAdmin) {
+      const admins = await countAdminUsers();
       if (admins <= 1) {
         return NextResponse.json(
           { error: "Cannot remove admin from the last admin account." },
@@ -123,7 +118,7 @@ export async function PATCH(
         );
       }
     }
-    updates.isAdmin = nextAdmin;
+    updates.isAdmin = adminFlagToDb(nextAdmin);
   }
 
   if (newPasswordRaw !== undefined) {
@@ -180,8 +175,8 @@ export async function DELETE(
     return NextResponse.json({ error: "User not found." }, { status: 404 });
   }
 
-  if (sqliteBoolean(target.isAdmin)) {
-    const admins = await countAdmins();
+  if (await readUserIsAdminFromDb(id)) {
+    const admins = await countAdminUsers();
     if (admins <= 1) {
       return NextResponse.json(
         { error: "Cannot delete the last admin account." },

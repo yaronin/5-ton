@@ -24,7 +24,7 @@ export function UserMenu({ user }: Props) {
       <span className="hidden max-w-[10rem] truncate font-mono text-[10px] uppercase tracking-[0.14em] text-neutral-400 sm:inline">
         {user.displayName}
       </span>
-      {user.isAdmin && (
+      {user.isAdmin === true && (
         <Link
           href="/admin"
           className="rounded-md border border-neutral-800 bg-neutral-950/70 px-2.5 py-2 font-mono text-[11px] uppercase tracking-[0.12em] text-neutral-200 transition hover:border-amber-500/40 hover:text-amber-300 sm:px-3 sm:text-xs"

@@ -5,7 +5,7 @@ import { getDb } from "@/db";
 import { users } from "@/db/schema";
 import { DEFAULT_ADMIN_EMAIL } from "@/lib/defaultAdmin";
 import { hashPassword } from "@/lib/password";
-import { sqliteBoolean } from "@/lib/sqliteBoolean";
+import { adminFlagToDb, readUserIsAdminFromDb } from "@/lib/isAdminFlag";
 import {
   attachSessionCookie,
   createAuthSession,
@@ -67,14 +67,13 @@ export async function POST(request: Request) {
       email,
       passwordHash,
       displayName,
-      isAdmin,
+      isAdmin: adminFlagToDb(isAdmin),
       createdAt,
     })
     .returning({
       id: users.id,
       email: users.email,
       displayName: users.displayName,
-      isAdmin: users.isAdmin,
     });
 
   if (!inserted) {
@@ -90,7 +89,7 @@ export async function POST(request: Request) {
       id: inserted.id,
       email: inserted.email,
       displayName: inserted.displayName,
-      isAdmin: sqliteBoolean(inserted.isAdmin),
+      isAdmin: await readUserIsAdminFromDb(inserted.id),
     },
   });
   attachSessionCookie(res, session.id, session.expiresAt);

@@ -5,7 +5,7 @@ import type { NextResponse } from "next/server";
 
 import { getDb } from "@/db";
 import { authSessions, users } from "@/db/schema";
-import { sqliteBoolean } from "@/lib/sqliteBoolean";
+import { readUserIsAdminFromDb } from "@/lib/isAdminFlag";
 
 export const SESSION_COOKIE = "ftc_session";
 const SESSION_MS = 30 * 24 * 60 * 60 * 1000;
@@ -43,7 +43,6 @@ export async function getSessionUser(): Promise<SessionUser | null> {
       id: users.id,
       email: users.email,
       displayName: users.displayName,
-      isAdmin: users.isAdmin,
     })
     .from(authSessions)
     .innerJoin(users, eq(authSessions.userId, users.id))
@@ -51,11 +50,12 @@ export async function getSessionUser(): Promise<SessionUser | null> {
     .limit(1);
   const row = rows[0];
   if (!row) return null;
+  const isAdmin = await readUserIsAdminFromDb(row.id);
   return {
     id: row.id,
     email: row.email,
     displayName: row.displayName,
-    isAdmin: sqliteBoolean(row.isAdmin),
+    isAdmin,
   };
 }
 
