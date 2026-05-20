@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { getDb } from "@/db";
 import { getSessionUser } from "@/lib/session";
+import { sqliteBoolean } from "@/lib/sqliteBoolean";
 
 const ADMIN_USERS_SQL = `
       SELECT
@@ -47,7 +48,7 @@ export async function GET() {
       id: Number(r.id),
       email: String(r.email ?? ""),
       displayName: String(r.displayName ?? ""),
-      isAdmin: Boolean(Number(r.isAdmin ?? 0)),
+      isAdmin: sqliteBoolean(r.isAdmin),
       createdAt: Number(r.createdAt),
       attemptCount: Number(r.attemptCount ?? 0),
       bestMs:

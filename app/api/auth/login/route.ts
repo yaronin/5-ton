@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 import { getDb } from "@/db";
 import { users } from "@/db/schema";
 import { verifyPassword } from "@/lib/password";
+import { sqliteBoolean } from "@/lib/sqliteBoolean";
 import {
   attachSessionCookie,
   createAuthSession,
@@ -70,7 +71,7 @@ export async function POST(request: Request) {
         id: user.id,
         email: user.email,
         displayName: user.displayName,
-        isAdmin: Boolean(user.isAdmin),
+        isAdmin: sqliteBoolean(user.isAdmin),
       },
     });
     attachSessionCookie(res, session.id, session.expiresAt);

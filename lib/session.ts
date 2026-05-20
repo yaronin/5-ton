@@ -5,6 +5,7 @@ import type { NextResponse } from "next/server";
 
 import { getDb } from "@/db";
 import { authSessions, users } from "@/db/schema";
+import { sqliteBoolean } from "@/lib/sqliteBoolean";
 
 export const SESSION_COOKIE = "ftc_session";
 const SESSION_MS = 30 * 24 * 60 * 60 * 1000;
@@ -54,7 +55,7 @@ export async function getSessionUser(): Promise<SessionUser | null> {
     id: row.id,
     email: row.email,
     displayName: row.displayName,
-    isAdmin: Boolean(row.isAdmin),
+    isAdmin: sqliteBoolean(row.isAdmin),
   };
 }
 

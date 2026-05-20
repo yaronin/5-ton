@@ -6,6 +6,7 @@ import { users } from "@/db/schema";
 import { DEFAULT_ADMIN_EMAIL } from "@/lib/defaultAdmin";
 import { hashPassword } from "@/lib/password";
 import { getSessionUser } from "@/lib/session";
+import { sqliteBoolean } from "@/lib/sqliteBoolean";
 import { normalizeEmail } from "@/lib/validation";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -113,7 +114,7 @@ export async function PATCH(
 
   if (isAdminRaw !== undefined) {
     const nextAdmin = Boolean(isAdminRaw);
-    if (target.isAdmin && !nextAdmin) {
+    if (sqliteBoolean(target.isAdmin) && !nextAdmin) {
       const admins = await countAdmins();
       if (admins <= 1) {
         return NextResponse.json(
@@ -179,7 +180,7 @@ export async function DELETE(
     return NextResponse.json({ error: "User not found." }, { status: 404 });
   }
 
-  if (target.isAdmin) {
+  if (sqliteBoolean(target.isAdmin)) {
     const admins = await countAdmins();
     if (admins <= 1) {
       return NextResponse.json(

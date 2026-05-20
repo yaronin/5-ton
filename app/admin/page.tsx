@@ -1,8 +1,10 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
+import type { AccountUser } from "@/lib/account";
 import { formatTime } from "@/lib/formatTime";
 
 type AdminUserRow = {
@@ -17,9 +19,11 @@ type AdminUserRow = {
 };
 
 export default function AdminPage() {
+  const router = useRouter();
   const [users, setUsers] = useState<AdminUserRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [myUserId, setMyUserId] = useState<number | null>(null);
+  const [adminAllowed, setAdminAllowed] = useState(false);
   const [editUser, setEditUser] = useState<AdminUserRow | null>(null);
   const [editEmail, setEditEmail] = useState("");
   const [editDisplayName, setEditDisplayName] = useState("");
@@ -47,17 +51,23 @@ export default function AdminPage() {
   }, []);
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    if (adminAllowed) void load();
+  }, [load, adminAllowed]);
 
   useEffect(() => {
     fetch("/api/auth/me", { credentials: "include" })
       .then((r) => r.json())
-      .then((d: { user?: { id: number } | null }) => {
-        setMyUserId(d.user?.id ?? null);
+      .then((d: { user?: AccountUser | null }) => {
+        const u = d.user ?? null;
+        if (!u?.isAdmin) {
+          router.replace("/");
+          return;
+        }
+        setAdminAllowed(true);
+        setMyUserId(u.id);
       })
-      .catch(() => setMyUserId(null));
-  }, []);
+      .catch(() => router.replace("/"));
+  }, [router]);
 
   const openEdit = (u: AdminUserRow) => {
     setEditUser(u);
@@ -125,6 +135,14 @@ export default function AdminPage() {
   };
 
   const adminCount = users?.filter((u) => u.isAdmin).length ?? 0;
+
+  if (!adminAllowed) {
+    return (
+      <main className="grid min-h-screen place-items-center bg-neutral-950 font-mono text-xs uppercase tracking-[0.2em] text-neutral-500">
+        Loading…
+      </main>
+    );
+  }
 
   return (
     <main className="min-h-screen bg-neutral-950 px-4 py-8 text-neutral-100">

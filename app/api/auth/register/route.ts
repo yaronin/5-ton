@@ -5,6 +5,7 @@ import { getDb } from "@/db";
 import { users } from "@/db/schema";
 import { DEFAULT_ADMIN_EMAIL } from "@/lib/defaultAdmin";
 import { hashPassword } from "@/lib/password";
+import { sqliteBoolean } from "@/lib/sqliteBoolean";
 import {
   attachSessionCookie,
   createAuthSession,
@@ -89,7 +90,7 @@ export async function POST(request: Request) {
       id: inserted.id,
       email: inserted.email,
       displayName: inserted.displayName,
-      isAdmin: Boolean(inserted.isAdmin),
+      isAdmin: sqliteBoolean(inserted.isAdmin),
     },
   });
   attachSessionCookie(res, session.id, session.expiresAt);
