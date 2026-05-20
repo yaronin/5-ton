@@ -9,6 +9,7 @@ import {
   type FormEvent,
   type ReactNode,
 } from "react";
+import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   ArrowRight,
@@ -23,8 +24,8 @@ import {
   Zap,
 } from "lucide-react";
 
-import { AuthPanel, type AccountUser } from "@/app/components/AuthPanel";
-import { LeaderboardStrip } from "@/app/components/LeaderboardStrip";
+import { UserMenu } from "@/app/components/UserMenu";
+import type { AccountUser } from "@/lib/account";
 import { formatTime } from "@/lib/formatTime";
 import {
   STORAGE_BEST,
@@ -77,7 +78,21 @@ function normalizeSessionResults(input: unknown): SessionResult[] {
     .filter((item) => item.durationMs > 0);
 }
 
+function bestMsFromResults(results: SessionResult[]): number | null {
+  const completed = results.filter((r) => r.isCompleted);
+  if (completed.length === 0) return null;
+  return completed.reduce(
+    (best, r) => Math.min(best, r.durationMs),
+    completed[0].durationMs
+  );
+}
+
+function storageKey(base: string, userId: number) {
+  return `${base}.${userId}`;
+}
+
 export default function Page() {
+  const router = useRouter();
   const [phase, setPhase] = useState<Phase>("weight");
   const [weight, setWeight] = useState<number | null>(null);
   const [weightInput, setWeightInput] = useState<string>("");
@@ -98,58 +113,41 @@ export default function Page() {
 
   const accountRef = useRef<AccountUser | null>(null);
   const [account, setAccount] = useState<AccountUser | null>(null);
+  const [authChecked, setAuthChecked] = useState(false);
 
-  const refreshSession = useCallback(() => {
-    fetch("/api/auth/me", { credentials: "include" })
-      .then((r) => r.json())
-      .then((d: { user: AccountUser | null }) => {
-        const u = d.user ?? null;
-        setAccount(u);
-        accountRef.current = u;
-      })
-      .catch(() => {
-        setAccount(null);
-        accountRef.current = null;
-      });
-  }, []);
-
-  useEffect(() => {
-    refreshSession();
-  }, [refreshSession]);
-
-  const saveSessionResult = useCallback((result: SessionResult) => {
-    const u = accountRef.current;
-    if (u) {
-      void fetch("/api/results", {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          completedAt: result.completedAt,
-          durationMs: result.durationMs,
-          weight: result.weight,
-          targetReps: result.targetReps,
-          pullReps: result.pullReps,
-          dipReps: result.dipReps,
-          isCompleted: result.isCompleted,
-        }),
-      }).catch(() => undefined);
-    }
-    setSessionResults((prev) => {
-      const next = [...prev, result].slice(-MAX_RESULTS);
+  const loadServerData = useCallback(async (userId: number) => {
+    try {
+      const res = await fetch("/api/results", { credentials: "include" });
+      if (!res.ok) return;
+      const data = (await res.json()) as {
+        results?: Array<{
+          completedAt: number;
+          durationMs: number;
+          weight: number;
+          targetReps: number;
+          pullReps: number;
+          dipReps: number;
+          isCompleted: boolean;
+        }>;
+      };
+      const normalized = normalizeSessionResults(data.results ?? []).slice(
+        -MAX_RESULTS
+      );
+      setSessionResults(normalized);
+      const serverBest = bestMsFromResults(normalized);
+      setBestMs(serverBest);
       try {
-        localStorage.setItem(STORAGE_RESULTS, JSON.stringify(next));
+        localStorage.setItem(
+          storageKey(STORAGE_RESULTS, userId),
+          JSON.stringify(normalized)
+        );
+        if (serverBest != null) {
+          localStorage.setItem(storageKey(STORAGE_BEST, userId), String(serverBest));
+        }
       } catch {
         // ignore
       }
-      return next;
-    });
-  }, []);
-
-  useEffect(() => {
-    try {
-      const storedWeight = localStorage.getItem(STORAGE_WEIGHT);
-      const storedBest = localStorage.getItem(STORAGE_BEST);
+      const storedWeight = localStorage.getItem(storageKey(STORAGE_WEIGHT, userId));
       if (storedWeight) {
         const parsed = Number(storedWeight);
         if (Number.isFinite(parsed) && parsed > 0) {
@@ -158,19 +156,63 @@ export default function Page() {
           setPhase("dashboard");
         }
       }
-      if (storedBest) {
-        const parsed = Number(storedBest);
-        if (Number.isFinite(parsed) && parsed > 0) setBestMs(parsed);
-      }
-      const storedResults = localStorage.getItem(STORAGE_RESULTS);
-      if (storedResults) {
-        const parsed = JSON.parse(storedResults);
-        const normalized = normalizeSessionResults(parsed);
-        setSessionResults(normalized);
-      }
     } catch {
-      // localStorage unavailable, ignore.
+      // ignore
     }
+  }, []);
+
+  useEffect(() => {
+    fetch("/api/auth/me", { credentials: "include" })
+      .then((r) => r.json())
+      .then((d: { user: AccountUser | null }) => {
+        const u = d.user ?? null;
+        setAccount(u);
+        accountRef.current = u;
+        setAuthChecked(true);
+        if (u) void loadServerData(u.id);
+      })
+      .catch(() => {
+        setAccount(null);
+        accountRef.current = null;
+        setAuthChecked(true);
+      });
+  }, [loadServerData]);
+
+  useEffect(() => {
+    if (authChecked && !account) {
+      router.replace("/login");
+    }
+  }, [authChecked, account, router]);
+
+  const saveSessionResult = useCallback((result: SessionResult) => {
+    const u = accountRef.current;
+    if (!u) return;
+    void fetch("/api/results", {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        completedAt: result.completedAt,
+        durationMs: result.durationMs,
+        weight: result.weight,
+        targetReps: result.targetReps,
+        pullReps: result.pullReps,
+        dipReps: result.dipReps,
+        isCompleted: result.isCompleted,
+      }),
+    }).catch(() => undefined);
+    setSessionResults((prev) => {
+      const next = [...prev, result].slice(-MAX_RESULTS);
+      try {
+        localStorage.setItem(
+          storageKey(STORAGE_RESULTS, u.id),
+          JSON.stringify(next)
+        );
+      } catch {
+        // ignore
+      }
+      return next;
+    });
   }, []);
 
   useEffect(() => {
@@ -213,11 +255,13 @@ export default function Page() {
           isCompleted: true,
         });
       }
+      const uid = accountRef.current?.id;
       try {
-        const prev = localStorage.getItem(STORAGE_BEST);
+        const prevKey = uid != null ? storageKey(STORAGE_BEST, uid) : STORAGE_BEST;
+        const prev = localStorage.getItem(prevKey);
         const prevMs = prev ? Number(prev) : null;
         if (!prevMs || elapsed < prevMs) {
-          localStorage.setItem(STORAGE_BEST, String(elapsed));
+          localStorage.setItem(prevKey, String(elapsed));
           setBestMs(elapsed);
           setIsNewPB(true);
         } else {
@@ -234,8 +278,11 @@ export default function Page() {
     e.preventDefault();
     const parsed = Number(weightInput);
     if (!Number.isFinite(parsed) || parsed <= 0) return;
+    const uid = accountRef.current?.id;
     try {
-      localStorage.setItem(STORAGE_WEIGHT, String(parsed));
+      if (uid != null) {
+        localStorage.setItem(storageKey(STORAGE_WEIGHT, uid), String(parsed));
+      }
     } catch {
       // ignore
     }
@@ -437,10 +484,13 @@ export default function Page() {
       "Start from scratch? This clears saved weight, PB, and the current session."
     );
     if (!confirmed) return;
+    const uid = accountRef.current?.id;
     try {
-      localStorage.removeItem(STORAGE_WEIGHT);
-      localStorage.removeItem(STORAGE_BEST);
-      localStorage.removeItem(STORAGE_RESULTS);
+      if (uid != null) {
+        localStorage.removeItem(storageKey(STORAGE_WEIGHT, uid));
+        localStorage.removeItem(storageKey(STORAGE_BEST, uid));
+        localStorage.removeItem(storageKey(STORAGE_RESULTS, uid));
+      }
     } catch {
       // ignore
     }
@@ -460,6 +510,14 @@ export default function Page() {
   const elapsedMs =
     startedAt === null ? 0 : (finishedAt ?? now) - startedAt;
 
+  if (!authChecked || !account) {
+    return (
+      <main className="grid min-h-screen place-items-center bg-neutral-950 font-mono text-xs uppercase tracking-[0.2em] text-neutral-500">
+        Loading…
+      </main>
+    );
+  }
+
   return (
     <main className="relative min-h-screen overflow-hidden">
       <BackdropFX />
@@ -467,11 +525,8 @@ export default function Page() {
       <div className="safe-y relative z-10 mx-auto flex min-h-screen w-full max-w-5xl flex-col px-4 py-5 sm:px-8 sm:py-8">
         <Header
           onOpenGuide={() => setShowGuide(true)}
-          authSlot={
-            <AuthPanel user={account} onSessionChange={refreshSession} />
-          }
+          authSlot={<UserMenu user={account} />}
         />
-        <LeaderboardStrip />
 
         <AnimatePresence mode="wait">
           {phase === "weight" && (
